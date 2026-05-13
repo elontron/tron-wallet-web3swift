@@ -8,7 +8,7 @@
 
 Pod::Spec.new do |s|
   s.name             = 'TronWalletWeb3Swift'
-  s.version          = '1.1.0'
+  s.version          = '1.1.1'
   s.summary          = 'TronWalletWeb3Swift is an iOS toolbelt for interaction with the Tron network.'
 
   s.homepage         = 'https://github.com/TronLink/TronWalletWeb3Swift'
@@ -21,9 +21,9 @@ Pod::Spec.new do |s|
   
   s.swift_version = '4.2'
   s.module_name = 'web3swift'
-  s.dependency 'PromiseKit', '~> 6.4'
-  s.dependency 'BigInt', '~> 3.1'
+  s.dependency 'PromiseKit', '6.18.1'
+  s.dependency 'BigInt', '3.1.0'
   s.dependency 'tron-wallet-secp256k1', '1.0.0'
-  s.dependency 'keccak.c', '~> 0.1'
-  s.dependency 'scrypt.c', '~> 0.1'
+  s.dependency 'CryptoSwift', '1.8.4'
+  s.dependency 'scrypt.c', '0.1.1'
 end
