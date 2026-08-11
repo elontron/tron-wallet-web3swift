@@ -78,6 +78,8 @@ public enum SECP256DataError: Error {
     case cannotExtractPublicKeyFromPrivateKey
     /// Cannot make recoverable signature
     case cannotMakeRecoverableSignature
+    /// Optional signing entropy could not be generated
+    case cannotGenerateExtraEntropy
     /// Cannot parse signature
     case cannotParseSignature
     /// Cannot parse public key
@@ -101,6 +103,8 @@ public enum SECP256DataError: Error {
             return "Cannot extract public key from private key"
         case .cannotMakeRecoverableSignature:
             return "Cannot make recoverable signature"
+        case .cannotGenerateExtraEntropy:
+            return "Cannot generate extra entropy for signing"
         case .cannotParseSignature:
             return "Cannot parse signature"
         case .cannotParsePublicKey:
@@ -289,22 +293,39 @@ struct SECP256K1 {
         return Data(serializedSignature)
     }
 
-    static func recoverableSign(hash: Data, privateKey: Data, useExtraEntropy: Bool = true) throws -> secp256k1_ecdsa_recoverable_signature {
+    static func recoverableSign(hash: Data, privateKey: Data, useExtraEntropy: Bool = false) throws -> secp256k1_ecdsa_recoverable_signature {
         try hash.checkHashSize()
         try SECP256K1.verifyPrivateKey(privateKey: privateKey)
-        var recoverableSignature: secp256k1_ecdsa_recoverable_signature = secp256k1_ecdsa_recoverable_signature()
-        let extraEntropy = Data.random(length: 32)
+        var recoverableSignature = secp256k1_ecdsa_recoverable_signature()
+        // RFC6979 needs no noncedata; only touch CSPRNG when the caller opts in.
+        let extraEntropy: Data? = useExtraEntropy ? try SECP256K1.makeExtraEntropy() : nil
         let result = hash.withUnsafeBytes { (hashPointer: UnsafePointer<UInt8>) -> Int32 in
             privateKey.withUnsafeBytes { (privateKeyPointer: UnsafePointer<UInt8>) in
-                extraEntropy.withUnsafeBytes { (extraEntropyPointer: UnsafePointer<UInt8>) in
-                    withUnsafeMutablePointer(to: &recoverableSignature, { (recSignaturePtr: UnsafeMutablePointer<secp256k1_ecdsa_recoverable_signature>) in
-                        secp256k1_ecdsa_sign_recoverable(context!, recSignaturePtr, hashPointer, privateKeyPointer, nil, useExtraEntropy ? extraEntropyPointer : nil)
-                    })
+                withUnsafeMutablePointer(to: &recoverableSignature) { (recSignaturePtr: UnsafeMutablePointer<secp256k1_ecdsa_recoverable_signature>) in
+                    if let extraEntropy = extraEntropy {
+                        return extraEntropy.withUnsafeBytes { (extraEntropyPointer: UnsafePointer<UInt8>) in
+                            secp256k1_ecdsa_sign_recoverable(context!, recSignaturePtr, hashPointer, privateKeyPointer, nil, extraEntropyPointer)
+                        }
+                    }
+                    return secp256k1_ecdsa_sign_recoverable(context!, recSignaturePtr, hashPointer, privateKeyPointer, nil, nil)
                 }
             }
         }
         guard result != 0 else { throw SECP256DataError.cannotMakeRecoverableSignature }
         return recoverableSignature
+    }
+
+    /// Optional 32-byte noncedata for randomized RFC6979. Throws instead of trapping
+    /// so deterministic signing stays available when the system RNG is unavailable.
+    private static func makeExtraEntropy() throws -> Data {
+        var data = Data(repeating: 0, count: 32)
+        let status = data.withUnsafeMutableBytes {
+            SecRandomCopyBytes(kSecRandomDefault, 32, $0)
+        }
+        guard status == errSecSuccess, data.contains(where: { $0 != 0 }) else {
+            throw SECP256DataError.cannotGenerateExtraEntropy
+        }
+        return data
     }
 
     static func recoverPublicKey(hash: Data, signature: Data, compressed: Bool = false) throws -> Data {
