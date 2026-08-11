@@ -3,6 +3,17 @@ import XCTest
 
 class Tests: XCTestCase {
 
+    func testPrivateKeyRejectsOutOfRangeRandomScalar() {
+        var valid = Data(repeating: 0, count: 32)
+        valid[31] = 1
+        var candidates = [Data(repeating: 0xff, count: 32), valid]
+
+        let generated = PrivateKey.generatePrivateKey { candidates.removeFirst() }
+
+        XCTAssertEqual(generated, valid)
+        XCTAssertTrue(candidates.isEmpty)
+    }
+
     /// BIP32Keystore encrypts 82 bytes, which is not a multiple of the AES block size,
     /// so PKCS7 makes CCCryptorFinal emit a block of its own. Writing that block at the
     /// wrong offset corrupts the ciphertext without any call reporting an error.
