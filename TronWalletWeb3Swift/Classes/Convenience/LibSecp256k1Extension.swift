@@ -164,41 +164,16 @@ struct SECP256K1 {
         return try serializePublicKey(publicKey: &publicKey, compressed: compressed)
     }
 
-    static func combineSerializedPublicKeys(keys: [Data], outputCompressed: Bool = false) throws -> Data {
-        assert(!keys.isEmpty, "Combining 0 public keys")
-        let numToCombine = keys.count
-        var storage = ContiguousArray<secp256k1_pubkey>()
-        let arrayOfPointers = UnsafeMutablePointer<UnsafePointer<secp256k1_pubkey>?>.allocate(capacity: numToCombine)
-        defer {
-            arrayOfPointers.deinitialize(count: numToCombine)
-            arrayOfPointers.deallocate()
-        }
-        for i in 0 ..< numToCombine {
-            let key = keys[i]
-            let pubkey = try SECP256K1.parsePublicKey(serializedKey: key)
-            storage.append(pubkey)
-        }
-        for i in 0 ..< numToCombine {
-            withUnsafePointer(to: &storage[i]) { (ptr) -> Void in
-                arrayOfPointers.advanced(by: i).pointee = ptr
+    static func addToPublicKey(publicKey: Data, tweak: Data) throws -> Data? {
+        try tweak.checkPrivateKeySize()
+        var parsedPublicKey = try SECP256K1.parsePublicKey(serializedKey: publicKey)
+        let result = tweak.withUnsafeBytes { (tweakPointer: UnsafePointer<UInt8>) -> Int32 in
+            withUnsafeMutablePointer(to: &parsedPublicKey) { (publicKeyPointer: UnsafeMutablePointer<secp256k1_pubkey>) in
+                secp256k1_ec_pubkey_tweak_add(context!, publicKeyPointer, tweakPointer)
             }
         }
-        let immutablePointer = UnsafePointer(arrayOfPointers)
-        var publicKey = secp256k1_pubkey()
-
-        //        let bufferPointer = UnsafeBufferPointer(start: immutablePointer, count: numToCombine)
-        //        for (index, value) in bufferPointer.enumerated() {
-        //            print("pointer value \(index): \(value!)")
-        //            let val = value?.pointee
-        //            print("value \(index): \(val!)")
-        //        }
-        //
-        let result = withUnsafeMutablePointer(to: &publicKey) { (pubKeyPtr: UnsafeMutablePointer<secp256k1_pubkey>) -> Int32 in
-            let res = secp256k1_ec_pubkey_combine(context!, pubKeyPtr, immutablePointer, numToCombine)
-            return res
-        }
-        guard result != 0 else { throw SECP256DataError.cannotCombinePublicKeys }
-        return try SECP256K1.serializePublicKey(publicKey: &publicKey, compressed: outputCompressed)
+        guard result != 0 else { return nil }
+        return try SECP256K1.serializePublicKey(publicKey: &parsedPublicKey, compressed: true)
     }
 
     static func recoverPublicKey(hash: Data, recoverableSignature: inout secp256k1_ecdsa_recoverable_signature) throws -> secp256k1_pubkey {

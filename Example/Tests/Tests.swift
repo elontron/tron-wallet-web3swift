@@ -81,4 +81,53 @@ class Tests: XCTestCase {
         XCTAssertEqual(try Mnemonics(generated.string, language: .japanese).entropy, generated.entropy)
         XCTAssertEqual(try W3Mnemonics(generated.string, language: .japanese).swift.entropy, generated.entropy)
     }
+
+    func testPublicChildMatchesPrivateChildPublicKey() throws {
+        let privateParent = try HDNode(seed: Data(repeating: 0, count: 16))
+        let publicParent = try XCTUnwrap(HDNode(XCTUnwrap(privateParent.serialize())))
+
+        let privateChild = try privateParent.derive(index: 0, derivePrivateKey: true)
+        let publicChild = try publicParent.derive(index: 0, derivePrivateKey: false)
+
+        XCTAssertEqual(publicChild.publicKey, privateChild.publicKey)
+        XCTAssertFalse(publicChild.hasPrivate)
+    }
+
+    func testPublicChildRetriesInvalidBIP32Offsets() throws {
+        var one = Data(repeating: 0, count: 32)
+        one[31] = 1
+        let privateParent = try HDNode(seed: Data(repeating: 0, count: 16))
+        let publicParent = try XCTUnwrap(HDNode(XCTUnwrap(privateParent.serialize())))
+        publicParent.publicKey = try SECP256K1.privateToPublic(privateKey: one, compressed: true)
+        let finalChaincode = Data(repeating: 3, count: 32)
+        var requestedIndices = [UInt32]()
+        var entropies = [
+            "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141".hex.bytes + [UInt8](repeating: 1, count: 32),
+            "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364140".hex.bytes + [UInt8](repeating: 2, count: 32),
+            [UInt8](repeating: 0, count: 32) + finalChaincode.bytes
+        ]
+
+        let child = try publicParent.derivePublic(index: 7) { index in
+            requestedIndices.append(index)
+            return entropies.removeFirst()
+        }
+
+        XCTAssertEqual(requestedIndices, [7, 8, 9])
+        XCTAssertEqual(child.childNumber, 9)
+        XCTAssertEqual(child.chaincode, finalChaincode)
+        XCTAssertEqual(child.publicKey, publicParent.publicKey)
+        XCTAssertEqual(child.path, "m/9")
+        XCTAssertTrue(entropies.isEmpty)
+
+        let lastPublicIndex = HDNode.hardenedIndexPrefix - 1
+        XCTAssertThrowsError(try publicParent.derivePublic(index: lastPublicIndex) { _ in
+            return "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141".hex.bytes
+                + [UInt8](repeating: 0, count: 32)
+        }) { error in
+            guard let deriveError = error as? HDNode.DeriveError,
+                  case .indexIsTooBig = deriveError else {
+                return XCTFail("Expected indexIsTooBig, got \(error)")
+            }
+        }
+    }
 }
