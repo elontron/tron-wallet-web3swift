@@ -68,4 +68,17 @@ class Tests: XCTestCase {
 
         XCTAssertEqual(privateKey.count, 32)
     }
+
+    func testBIP39ImportsEveryValidWordCountAndJapaneseSeparator() throws {
+        for (byteCount, wordCount) in [(16, 12), (20, 15), (24, 18), (28, 21), (32, 24)] {
+            let generated = try Mnemonics(entropy: Data(repeating: 0, count: byteCount))
+            XCTAssertEqual(generated.string.components(separatedBy: " ").count, wordCount)
+            XCTAssertEqual(try Mnemonics(generated.string).entropy, generated.entropy)
+        }
+
+        let generated = try Mnemonics(entropy: Data(repeating: 0, count: 16), language: .japanese)
+        XCTAssertTrue(generated.string.contains("\u{3000}"))
+        XCTAssertEqual(try Mnemonics(generated.string, language: .japanese).entropy, generated.entropy)
+        XCTAssertEqual(try W3Mnemonics(generated.string, language: .japanese).swift.entropy, generated.entropy)
+    }
 }
