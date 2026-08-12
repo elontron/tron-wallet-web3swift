@@ -86,9 +86,10 @@ public enum EntropySize: Int {
  To get private key from mnemonics:
  ```
  let mnemonics = Mnemonics()
- let keystore = try BIP32Keystore(mnemonics: mnemonics)
+ let password = <#Wallet password#>
+ let keystore = try BIP32Keystore(mnemonics: mnemonics, password: password)
  let address = keystore.addresses[0]
- let privateKey = try keystore.UNSAFE_getPrivateKeyData(password: "", account: address)
+ let privateKey = try keystore.UNSAFE_getPrivateKeyData(password: password, account: address)
  let publicKey = try Web3Utils.privateToPublic(privateKey, compressed: true)
  ```
  In the most cases you don't need to manage your public and private keys. web3swift doing this for you.
@@ -266,4 +267,3 @@ extension Mnemonics: CustomStringConvertible {
         return string
     }
 }
-
